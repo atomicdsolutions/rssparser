@@ -594,19 +594,14 @@ const FeedDetail: React.FC = () => {
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-3">Number of Episodes</label>
                         <div className="flex items-center space-x-4">
-                          {(() => {
-                            const progressPercent = (podcastEmbedCustomizations.itemCount / 20) * 100;
-                            const progressStyle = `linear-gradient(to right, #6366f1 0%, #6366f1 ${progressPercent}%, #e5e7eb ${progressPercent}%, #e5e7eb 100%)`;
-                            return <input
+                          <input
                             type="range"
                             min="1"
                             max="20"
                             value={podcastEmbedCustomizations.itemCount}
-                            onChange={(e) => setPodcastEmbedCustomizations(prev => ({ ...prev, itemCount: parseInt(e.target.value) })))
+                            onChange={(e) => setPodcastEmbedCustomizations(prev => ({ ...prev, itemCount: parseInt(e.target.value) }))}
                             className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                            style={{ background: progressStyle }}
                           />
-                          })()}
                           <div className="w-12 text-center">
                             <input
                               type="number"
@@ -666,7 +661,7 @@ const FeedDetail: React.FC = () => {
                           <input
                             type="checkbox"
                             checked={!podcastEmbedCustomizations.hideDate}
-                            onChange={(e) => setPodcastEmbedCustomizations(prev => ({ ...prev, hideDate: !e.target.checked })))
+                            onChange={(e) => setPodcastEmbedCustomizations(prev => ({ ...prev, hideDate: !e.target.checked }))}
                             className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
                           />
                           <span className="ml-2 text-sm text-gray-700">Show Date</span>
