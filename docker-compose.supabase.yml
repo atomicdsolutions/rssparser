@@ -1,0 +1,405 @@
+version: '3.8'
+
+services:
+  # Supabase Studio - Web UI for managing Supabase
+  studio:
+    container_name: supabase-studio
+    image: supabase/studio:latest
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-supabase123}
+      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORGANIZATION:-Default Organization}
+      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT:-Default Project}
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: http://localhost:8000
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+    networks:
+      - feedparser
+
+  # Kong API Gateway
+  kong:
+    container_name: supabase-kong
+    image: kong:2.8.1
+    restart: unless-stopped
+    ports:
+      - "8000:8000/tcp"
+      - "8443:8443/tcp"
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-id,cors,key-auth,acl,basic-auth
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+    volumes:
+      - ./supabase/config/kong.yml:/var/lib/kong/kong.yml:ro
+    depends_on:
+      - auth
+      - rest
+      - realtime
+      - storage
+    networks:
+      - feedparser
+
+  # GoTrue Auth Server
+  auth:
+    container_name: supabase-auth
+    image: supabase/gotrue:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgresql://supabase_auth_admin:${POSTGRES_PASSWORD:-supabase123}@db:5432/${POSTGRES_DB:-supabase}
+      GOTRUE_SITE_URL: ${SITE_URL:-http://localhost:3000}
+      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS:-}
+      GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP:-false}
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP:-true}
+      GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM:-true}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL:-admin@example.com}
+      GOTRUE_SMTP_HOST: ${SMTP_HOST:-supabase-inbucket}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT:-2500}
+      GOTRUE_SMTP_USER: ${SMTP_USER:-fake_mail_user}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS:-fake_mail_password}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-fake_sender}
+      GOTRUE_MAILER_URLPATHS_INVITE: ${MAILER_URLPATHS_INVITE:-/auth/v1/verify}
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: ${MAILER_URLPATHS_CONFIRMATION:-/auth/v1/verify}
+      GOTRUE_MAILER_URLPATHS_RECOVERY: ${MAILER_URLPATHS_RECOVERY:-/auth/v1/verify}
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: ${MAILER_URLPATHS_EMAIL_CHANGE:-/auth/v1/verify}
+    networks:
+      - feedparser
+
+  # PostgREST API Server
+  rest:
+    container_name: supabase-rest
+    image: postgrest/postgrest:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      PGRST_DB_URI: postgresql://authenticator:${POSTGRES_PASSWORD:-supabase123}@db:5432/${POSTGRES_DB:-supabase}
+      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS:-public}
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
+      PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY:-3600}
+    command:
+      - postgrest
+    networks:
+      - feedparser
+
+  # Realtime Server
+  realtime:
+    container_name: supabase-realtime
+    image: supabase/realtime:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-supabase123}
+      DB_NAME: ${POSTGRES_DB:-supabase}
+      DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime'
+      DB_ENC_KEY: supabaserealtime
+      API_JWT_SECRET: ${JWT_SECRET}
+      FLY_ALLOC_ID: fly123
+      FLY_APP_NAME: realtime
+      SECRET_KEY_BASE: UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq
+      ERL_AFLAGS: -proto_dist inet_tcp
+      ENABLE_TAILSCALE: "false"
+      DNS_NODES: "''"
+    command: >
+      sh -c "/app/bin/migrate && /app/bin/realtime eval 'Realtime.Release.seeds(Realtime.Repo)' && /app/bin/realtime start"
+    networks:
+      - feedparser
+
+  # Supabase Storage
+  storage:
+    container_name: supabase-storage
+    image: supabase/storage-api:latest
+    depends_on:
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_started
+      imgproxy:
+        condition: service_started
+    restart: unless-stopped
+    environment:
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgresql://supabase_storage_admin:${POSTGRES_PASSWORD:-supabase123}@db:5432/${POSTGRES_DB:-supabase}
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+      ENABLE_IMAGE_TRANSFORMATION: "true"
+      IMGPROXY_URL: http://imgproxy:5001
+    volumes:
+      - storage_data:/var/lib/storage:z
+    networks:
+      - feedparser
+
+  # Image Proxy for Storage
+  imgproxy:
+    container_name: supabase-imgproxy
+    image: darthsim/imgproxy:v3.8.0
+    environment:
+      IMGPROXY_BIND: ":5001"
+      IMGPROXY_LOCAL_FILESYSTEM_ROOT: /
+      IMGPROXY_USE_ETAG: "true"
+      IMGPROXY_ENABLE_WEBP_DETECTION: ${IMGPROXY_ENABLE_WEBP_DETECTION:-true}
+    volumes:
+      - storage_data:/var/lib/storage:z
+    networks:
+      - feedparser
+
+  # PostgreSQL Database (Supabase configured)
+  db:
+    container_name: supabase-db
+    image: supabase/postgres:latest
+    healthcheck:
+      test: pg_isready -U postgres -h localhost
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      - vector
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      PGPORT: 5432
+      POSTGRES_PORT: 5432
+      PGUSER: supabase_admin
+      POSTGRES_USER: supabase_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-supabase123}
+      POSTGRES_DB: ${POSTGRES_DB:-supabase}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP: ${JWT_EXPIRY:-3600}
+    volumes:
+      - db_data:/var/lib/postgresql/data:Z
+      - ./supabase/config/init:/docker-entrypoint-initdb.d
+    networks:
+      - feedparser
+
+  # Vector Database Extension
+  vector:
+    container_name: supabase-vector
+    image: timberio/vector:0.28.1-alpine
+    healthcheck:
+      test: ["CMD", "vector", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - ./supabase/config/vector.yml:/etc/vector/vector.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: ["--config", "etc/vector/vector.yml"]
+    networks:
+      - feedparser
+
+  # pg_meta - Database metadata API
+  meta:
+    container_name: supabase-meta
+    image: supabase/postgres-meta:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_NAME: ${POSTGRES_DB:-supabase}
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PORT: 5432
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:-supabase123}
+    networks:
+      - feedparser
+
+  # Consul for service discovery (keeping from original)
+  consul:
+    container_name: feedparser-consul
+    image: consul:latest
+    command: consul agent -dev -client=0.0.0.0 -ui
+    ports:
+      - "8500:8500"
+      - "8600:8600/udp"
+    volumes:
+      - consul_data:/consul/data
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - feedparser
+
+  # Feed Parser Service (updated for Supabase)
+  feed-parser:
+    build:
+      context: .
+      dockerfile: services/feed-parser/Dockerfile
+    container_name: feedparser-parser
+    ports:
+      - "8001:8001"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8001
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - DEBUG=true
+      - LOG_LEVEL=INFO
+    depends_on:
+      consul:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - feedparser
+
+  # Web API Service (updated for Supabase)
+  web-api:
+    build:
+      context: .
+      dockerfile: services/web-api/Dockerfile
+    container_name: feedparser-api
+    ports:
+      - "8002:8002"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8002
+      - SUPABASE_URL=http://kong:8000
+      - SUPABASE_ANON_KEY=${ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
+      - FEED_PARSER_URL=http://feed-parser:8001
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - CORS_ORIGINS=http://localhost:3000,http://frontend:3000
+      - DEBUG=true
+      - LOG_LEVEL=INFO
+    depends_on:
+      db:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+      kong:
+        condition: service_started
+      feed-parser:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - feedparser
+
+  # Scheduler Service (updated for Supabase)
+  scheduler:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    container_name: feedparser-scheduler
+    environment:
+      - SUPABASE_URL=http://kong:8000
+      - SUPABASE_ANON_KEY=${ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
+      - FEED_PARSER_URL=http://feed-parser:8001
+      - WEB_API_URL=http://web-api:8002
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - FEED_UPDATE_INTERVAL_MINUTES=5
+      - MAX_CONCURRENT_FEEDS=3
+      - DEBUG=true
+      - LOG_LEVEL=INFO
+    depends_on:
+      db:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+      kong:
+        condition: service_started
+      web-api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - feedparser
+
+  # Frontend Service (updated for Supabase)
+  frontend:
+    build:
+      context: .
+      dockerfile: services/frontend/Dockerfile
+    container_name: feedparser-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8002
+      - REACT_APP_SUPABASE_URL=http://localhost:8000
+      - REACT_APP_SUPABASE_ANON_KEY=${ANON_KEY}
+      - CHOKIDAR_USEPOLLING=true
+    depends_on:
+      web-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - feedparser
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: feedparser-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx-supabase.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - web-api
+      - feed-parser
+      - kong
+    networks:
+      - feedparser
+
+volumes:
+  db_data:
+    driver: local
+  storage_data:
+    driver: local
+  consul_data:
+    driver: local
+
+networks:
+  feedparser:
+    driver: bridge

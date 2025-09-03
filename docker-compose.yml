@@ -1,0 +1,178 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database (local alternative to Supabase for testing)
+  postgres:
+    image: postgres:15-alpine
+    container_name: feedparser-postgres
+    environment:
+      POSTGRES_DB: feedparser
+      POSTGRES_USER: feedparser
+      POSTGRES_PASSWORD: feedparser_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema/tables.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U feedparser -d feedparser"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - feedparser
+
+  # Consul for service discovery
+  consul:
+    image: consul:1.16
+    container_name: feedparser-consul
+    command: consul agent -dev -client=0.0.0.0 -ui
+    ports:
+      - "8500:8500"
+      - "8600:8600/udp"
+    volumes:
+      - consul_data:/consul/data
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - feedparser
+
+  # Feed Parser Service
+  feed-parser:
+    build:
+      context: .
+      dockerfile: services/feed-parser/Dockerfile
+    container_name: feedparser-parser
+    ports:
+      - "8001:8001"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8001
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - DEBUG=true
+      - LOG_LEVEL=INFO
+    depends_on:
+      consul:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - feedparser
+
+  # Web API Service
+  web-api:
+    build:
+      context: .
+      dockerfile: services/web-api/Dockerfile
+    container_name: feedparser-api
+    ports:
+      - "8002:8002"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8002
+      - DATABASE_URL=postgresql://feedparser:feedparser_password@postgres:5432/feedparser
+      - SUPABASE_URL=postgresql://feedparser:feedparser_password@postgres:5432/feedparser
+      - SUPABASE_SERVICE_ROLE_KEY=dummy-key-for-local-testing
+      - FEED_PARSER_URL=http://feed-parser:8001
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - CORS_ORIGINS=http://localhost:3000,http://frontend:3000
+      - DEBUG=true
+      - LOG_LEVEL=INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+      feed-parser:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - feedparser
+
+  # Scheduler Service
+  scheduler:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    container_name: feedparser-scheduler
+    environment:
+      - DATABASE_URL=postgresql://feedparser:feedparser_password@postgres:5432/feedparser
+      - SUPABASE_URL=postgresql://feedparser:feedparser_password@postgres:5432/feedparser
+      - SUPABASE_SERVICE_ROLE_KEY=dummy-key-for-local-testing
+      - FEED_PARSER_URL=http://feed-parser:8001
+      - WEB_API_URL=http://web-api:8002
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - FEED_UPDATE_INTERVAL_MINUTES=5
+      - MAX_CONCURRENT_FEEDS=3
+      - DEBUG=true
+      - LOG_LEVEL=INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+      web-api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - feedparser
+
+  # Frontend Service
+  frontend:
+    build:
+      context: .
+      dockerfile: services/frontend/Dockerfile
+    container_name: feedparser-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8002
+      - CHOKIDAR_USEPOLLING=true
+    depends_on:
+      web-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - feedparser
+
+  # Nginx Reverse Proxy (Optional - for production-like setup)
+  nginx:
+    image: nginx:alpine
+    container_name: feedparser-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - web-api
+      - feed-parser
+    networks:
+      - feedparser
+
+volumes:
+  postgres_data:
+    driver: local
+  consul_data:
+    driver: local
+
+networks:
+  feedparser:
+    driver: bridge

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blog Embed Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .description {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .embed-container {
+            margin: 20px 0;
+        }
+        .embed-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #444;
+        }
+        iframe {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+        }
+        .code {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #495057;
+            margin-top: 10px;
+        }
+        .timeout-demo {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📝 Blog Post Embed Demo</h1>
+        <p class="description">
+            This page demonstrates how blog posts can be embedded into external websites with timeout handling.
+            The blog embed shows a clean, responsive layout with timeout fallback messages.
+        </p>
+        
+        <div class="timeout-demo">
+            <h3>⏱️ Timeout Feature</h3>
+            <p>If the blog feed takes longer than 1500ms to load, users will see a friendly "No new posts right now, come back soon!" message instead of hanging indefinitely.</p>
+        </div>
+
+        <div class="embed-container">
+            <div class="embed-title">Blog Embed (100% width, 600px height)</div>
+            <iframe src="http://localhost:3000/blog-embed/cheese-blog" width="100%" height="600" frameborder="0" allowfullscreen></iframe>
+            <div class="code">
+                &lt;iframe src="http://localhost:3000/blog-embed/cheese-blog" width="100%" height="600" frameborder="0" allowfullscreen&gt;&lt;/iframe&gt;
+            </div>
+        </div>
+
+        <div class="embed-container">
+            <div class="embed-title">Customized Blog Embed (Light theme, 5 posts, no images)</div>
+            <iframe src="http://localhost:3000/blog-embed/cheese-blog?theme=light&itemCount=3&hideImages=true" width="100%" height="500" frameborder="0" allowfullscreen></iframe>
+            <div class="code">
+                &lt;iframe src="http://localhost:3000/blog-embed/cheese-blog?theme=light&itemCount=3&hideImages=true" width="100%" height="500" frameborder="0" allowfullscreen&gt;&lt;/iframe&gt;
+            </div>
+        </div>
+
+        <div class="embed-container">
+            <div class="embed-title">Compact Blog Embed (400px width, 400px height)</div>
+            <iframe src="http://localhost:3000/blog-embed/cheese-blog?theme=dark&itemCount=2&hideAuthor=true" width="400" height="400" frameborder="0" allowfullscreen></iframe>
+            <div class="code">
+                &lt;iframe src="http://localhost:3000/blog-embed/cheese-blog?theme=dark&itemCount=2&hideAuthor=true" width="400" height="400" frameborder="0" allowfullscreen&gt;&lt;/iframe&gt;
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>How to Use Blog Embeds</h2>
+        <ol>
+            <li>Visit your blog feed page (e.g., <code>http://localhost:3000/feed/cheese-blog</code>)</li>
+            <li>Click the "Embed Blog" button in the header section</li>
+            <li>Customize the appearance using the available options</li>
+            <li>Copy the embed code from the modal dialog</li>
+            <li>Paste the code into your website's HTML</li>
+        </ol>
+        
+        <h3>Blog Embed Features</h3>
+        <ul>
+            <li>✅ Clean, responsive blog post layout</li>
+            <li>✅ 1500ms timeout with friendly fallback messages</li>
+            <li>✅ Light/Dark theme support</li>
+            <li>✅ Customizable post count (1-20 posts)</li>
+            <li>✅ Show/hide images, dates, authors, descriptions</li>
+            <li>✅ Optional full content extraction (slower but more detailed)</li>
+            <li>✅ Self-contained - doesn't rely on original blog being available</li>
+            <li>✅ Works on any website that allows iframes</li>
+        </ul>
+
+        <h3>Customization Options</h3>
+        <ul>
+            <li><strong>theme</strong>: light or dark</li>
+            <li><strong>itemCount</strong>: Number of posts (1-20)</li>
+            <li><strong>hideImages</strong>: Hide post images</li>
+            <li><strong>hideDescription</strong>: Hide post content</li>
+            <li><strong>hideDate</strong>: Hide publication dates</li>
+            <li><strong>hideAuthor</strong>: Hide post authors</li>
+            <li><strong>showFullContent</strong>: Extract full content (slower)</li>
+            <li><strong>backgroundGradient</strong>: Custom background color</li>
+        </ul>
+    </div>
+</body>
+</html>
