@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Rss, 
@@ -34,15 +34,20 @@ const SimpleDashboard: React.FC = () => {
     }
   ]);
 
-  const loadFeed = async (feedIndex: number) => {
+  const loadFeed = useCallback(async (feedIndex: number) => {
     const feed = feeds[feedIndex];
+    const itemLimit = parseInt(localStorage.getItem('feedItemLimit') || '10');
+    
     try {
       const response = await fetch('http://localhost:8001/parse', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ url: feed.url })
+        body: JSON.stringify({ 
+          url: feed.url,
+          limit: itemLimit === 0 ? null : itemLimit  // 0 means all items
+        })
       });
       const data = await response.json();
       
@@ -59,14 +64,30 @@ const SimpleDashboard: React.FC = () => {
           : f
       ));
     }
-  };
+  }, [feeds]);
 
   useEffect(() => {
     // Load all feeds
     feeds.forEach((_, index) => {
       loadFeed(index);
     });
-  }, []);
+
+    // Listen for feed limit changes and refresh all feeds
+    const handleFeedLimitChanged = () => {
+      feeds.forEach((_, index) => {
+        setFeeds(prev => prev.map((f, i) => 
+          i === index ? { ...f, status: 'loading' } : f
+        ));
+        loadFeed(index);
+      });
+    };
+
+    window.addEventListener('feedLimitChanged', handleFeedLimitChanged);
+    
+    return () => {
+      window.removeEventListener('feedLimitChanged', handleFeedLimitChanged);
+    };
+  }, [feeds, loadFeed]);
 
   const handleRefresh = (index: number) => {
     setFeeds(prev => prev.map((f, i) => 
@@ -77,6 +98,19 @@ const SimpleDashboard: React.FC = () => {
 
   const totalItems = feeds.reduce((sum, feed) => sum + (feed.items?.length || 0), 0);
   const successfulFeeds = feeds.filter(f => f.status === 'success').length;
+  
+  // Count unique categories from all feeds
+  const uniqueCategories = new Set();
+  feeds.forEach(feed => {
+    if (feed.data?.categories) {
+      feed.data.categories.forEach((category: string) => uniqueCategories.add(category));
+    }
+    // Also count feed names as categories if no specific categories exist
+    if (feed.status === 'success' && (!feed.data?.categories || feed.data.categories.length === 0)) {
+      uniqueCategories.add(feed.name);
+    }
+  });
+  const categoryCount = uniqueCategories.size || successfulFeeds;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -132,7 +166,7 @@ const SimpleDashboard: React.FC = () => {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Categories</p>
-                <p className="text-2xl font-bold text-gray-900">3</p>
+                <p className="text-2xl font-bold text-gray-900">{categoryCount}</p>
               </div>
             </div>
           </div>

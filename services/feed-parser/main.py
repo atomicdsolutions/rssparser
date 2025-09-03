@@ -36,6 +36,7 @@ app.add_middleware(
 class FeedUrl(BaseModel):
     url: HttpUrl
     name: Optional[str] = None
+    limit: Optional[int] = None
 
 class FeedItem(BaseModel):
     title: str
@@ -66,7 +67,7 @@ class FeedParser:
             'User-Agent': 'FeedParser/1.0 (RSS Feed Parser Service)'
         })
 
-    async def parse_feed(self, feed_url: str, extract_content: bool = False) -> ParsedFeed:
+    async def parse_feed(self, feed_url: str, extract_content: bool = False, limit: Optional[int] = None) -> ParsedFeed:
         """Parse RSS feed and extract all content"""
         try:
             logger.info(f"Parsing feed: {feed_url}")
@@ -92,10 +93,14 @@ class FeedParser:
             category = feed.feed.get('category', '')
             language = feed.feed.get('language', '')
             
-            # Process each feed item
+            # Process each feed item (with optional limit)
             items = []
+            entries_to_process = feed.entries
+            if limit and limit > 0:
+                entries_to_process = feed.entries[:limit]
+            
             async with httpx.AsyncClient() as client:
-                for entry in feed.entries:
+                for entry in entries_to_process:
                     item = await self._process_feed_item(entry, client, extract_content)
                     if item:
                         items.append(item)
@@ -261,7 +266,7 @@ parser = FeedParser()
 @app.post("/parse", response_model=ParsedFeed)
 async def parse_feed_endpoint(feed_data: FeedUrl, extract_content: bool = False):
     """Parse a single RSS feed"""
-    return await parser.parse_feed(str(feed_data.url), extract_content)
+    return await parser.parse_feed(str(feed_data.url), extract_content, feed_data.limit)
 
 @app.post("/parse-batch")
 async def parse_feeds_batch(feed_urls: List[FeedUrl]):
